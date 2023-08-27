@@ -1,6 +1,7 @@
 import pygame
 import random
 import sys
+from Tetrimino import Tetrimino
 
 # Initialize pygame
 pygame.init()
@@ -9,7 +10,8 @@ pygame.init()
 WHITE = (255, 255, 255)
 GRID_SIZE = (10, 20)
 BLOCK_SIZE = 30
-SCREEN_SIZE = (GRID_SIZE[0] * BLOCK_SIZE, GRID_SIZE[1] * BLOCK_SIZE)
+SCREEN_SIZE = (GRID_SIZE[0] * BLOCK_SIZE + 150, GRID_SIZE[1] * BLOCK_SIZE)  # +150 pixels for the preview box
+
 FPS = 60
 
 # Tetriminos shapes and rotations
@@ -18,26 +20,47 @@ TETRIMINOS = {
         [(0, 1), (1, 1), (2, 1), (3, 1)],
         [(2, 0), (2, 1), (2, 2), (2, 3)]
     ],
+    "J": [
+        [(0, 1), (0, 2), (1, 2), (2, 2)],
+        [(1, 0), (2, 0), (1, 1), (1, 2)],
+        [(0, 1), (1, 1), (2, 1), (2, 0)],
+        [(1, 0), (1, 1), (1, 2), (2, 2)]
+    ],
+    "L": [
+        [(0, 1), (1, 1), (2, 1), (2, 2)],
+        [(1, 0), (1, 1), (1, 2), (2, 0)],
+        [(0, 1), (1, 1), (2, 1), (0, 0)],
+        [(1, 0), (1, 1), (1, 2), (0, 2)]
+    ],
     "O": [
         [(1, 1), (1, 2), (2, 1), (2, 2)]
     ],
+    "S": [
+        [(1, 1), (2, 1), (0, 2), (1, 2)],
+        [(1, 0), (1, 1), (2, 1), (2, 2)]
+    ],
+    "Z": [
+        [(0, 1), (1, 1), (1, 2), (2, 2)],
+        [(2, 0), (1, 1), (2, 1), (1, 2)]
+    ],
     "T": [
         [(1, 1), (0, 2), (1, 2), (2, 2)],
-        [(1, 1), (0, 2), (1, 2), (1, 3)],
-        [(1, 2), (0, 2), (1, 1), (2, 2)],
-        [(1, 2), (1, 1), (1, 3), (2, 2)]
-    ],
-    # ... (Other Tetriminos)
+        [(1, 0), (0, 1), (1, 1), (1, 2)],
+        [(0, 1), (1, 1), (2, 1), (1, 2)],
+        [(1, 0), (1, 1), (1, 2), (2, 1)]
+    ]
 }
+
 
 
 class TetrisGame:
     def __init__(self):
-        # ... (Previous code)
         self.grid = [[0 for _ in range(GRID_SIZE[0])] for _ in range(GRID_SIZE[1])]
-        self.current_tetrimino = random.choice(list(TETRIMINOS.keys()))
-        self.current_position = (0, 0)
+        
+        # Initialize with a Tetrimino instance
         self.next_tetrimino = random.choice(list(TETRIMINOS.keys()))
+        self.spawn_tetrimino()  # This will set self.current_tetrimino
+        
         self.screen = pygame.display.set_mode(SCREEN_SIZE)
         self.clock = pygame.time.Clock()
 
@@ -56,19 +79,39 @@ class TetrisGame:
             self.current_position = new_position
 
     def rotate(self):
-        # Get the next rotation
-        current_rotation = TETRIMINOS[self.current_tetrimino]
-        next_rotation = current_rotation[(current_rotation.index(self.current_tetrimino) + 1) % len(current_rotation)]
-        if not self.check_collision(self.current_position, next_rotation):
-            self.current_tetrimino = next_rotation
+        # Get the potential next rotated shape
+        potential_rotated_shape = self.current_tetrimino.rotate()
+
+        # If the new rotation does not result in a collision, update the tetrimino's rotation
+        if not self.check_collision(self.current_position, potential_rotated_shape):
+            self.current_tetrimino.rotation += 1
+            self.current_tetrimino.rotation %= len(self.current_tetrimino.shape)
+        else:
+            # If it does result in a collision, revert the rotation to its previous state
+            self.current_tetrimino.rotation -= 1
+            self.current_tetrimino.rotation %= len(self.current_tetrimino.shape)
+
+    def draw_preview_box(self):
+        pygame.draw.rect(self.screen, (0, 0, 0), (GRID_SIZE[0] * BLOCK_SIZE, 0, 150, 5 * BLOCK_SIZE), 2)  # Draws a rectangle with a 2 pixel border width
+        pygame.draw.rect(self.screen, (220, 220, 220), (GRID_SIZE[0] * BLOCK_SIZE + 2, 2, 146, 5 * BLOCK_SIZE - 4))  # Fills the inside of the rectangle
+
+    def draw_next_tetrimino(self):
+        tetrimino_shape = TETRIMINOS[self.next_tetrimino][0]  # Get the first rotation of the next tetrimino
+        offset_x = GRID_SIZE[0] * BLOCK_SIZE + 75  # Center of the preview box
+        offset_y = BLOCK_SIZE * 2  # Vertical position in the preview box
+        for x, y in tetrimino_shape:
+            pygame.draw.rect(self.screen, (0, 128, 255), ((x * BLOCK_SIZE) + offset_x, (y * BLOCK_SIZE) + offset_y, BLOCK_SIZE, BLOCK_SIZE))
+
 
     def spawn_tetrimino(self):
-        self.current_tetrimino = self.next_tetrimino
+        self.current_tetrimino = Tetrimino(TETRIMINOS[self.next_tetrimino])
+
         self.next_tetrimino = random.choice(list(TETRIMINOS.keys()))
         self.current_position = (GRID_SIZE[0] // 2, 0)
-        if self.check_collision(self.current_position, TETRIMINOS[self.current_tetrimino][0]):
+        if self.check_collision(self.current_position, self.current_tetrimino.current_shape):
             # Game over if collision at spawn
             self.reset()
+
 
     def drop(self):
         while not self.check_collision((self.current_position[0], self.current_position[1] + 1), TETRIMINOS[self.current_tetrimino][0]):
@@ -77,6 +120,7 @@ class TetrisGame:
 
 
     def check_collision(self, position, tetrimino):
+        print(f"Checking collision with: {tetrimino}")
         for x, y in tetrimino:
             if x + position[0] >= GRID_SIZE[0] or y + position[1] >= GRID_SIZE[1] or \
                x + position[0] < 0 or y + position[1] < 0 or \
@@ -91,11 +135,14 @@ class TetrisGame:
                     pygame.draw.rect(self.screen, (0, 128, 255), (x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE))
 
     def draw_tetrimino(self, position, tetrimino):
+        if not isinstance(tetrimino, list):
+            return
         for x, y in tetrimino:
             pygame.draw.rect(self.screen, (0, 128, 255), ((x + position[0]) * BLOCK_SIZE, (y + position[1]) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE))
 
+
     def place_tetrimino(self):
-        for x, y in TETRIMINOS[self.current_tetrimino][0]:
+        for x, y in self.current_tetrimino.current_shape:
             self.grid[y + self.current_position[1]][x + self.current_position[0]] = 1
         self.clear_lines()
         self.spawn_tetrimino()
@@ -107,9 +154,60 @@ class TetrisGame:
             self.grid.insert(0, [0 for _ in range(GRID_SIZE[0])])
 
 
+    def move_left(self):
+        """Move the current tetrimino one unit to the left if possible."""
+        new_position = (self.current_position[0] - 1, self.current_position[1])
+        
+        # Check if the move is valid
+        if not self.check_collision(new_position, self.current_tetrimino.current_shape):
+            self.current_position = new_position
+
+    def move_right(self):
+        """Move the current tetrimino one unit to the right if possible."""
+        new_position = (self.current_position[0] + 1, self.current_position[1])
+        
+        # Check if the move is valid
+        if not self.check_collision(new_position, self.current_tetrimino.current_shape):
+            self.current_position = new_position
+
+    def calculate_reward(self):
+        """Calculate reward based on line clears or other game metrics."""
+        # For simplicity, reward 1 point for each cleared line
+        # Note: You may want to design a more complex reward function
+        reward = 0
+        for row in self.grid:
+            if all(cell == 1 for cell in row):  # Assuming 1 represents filled cell
+                reward += 1
+        return reward
+
     def game_over(self):
-        # Check if the game is over
-        pass
+        """Check if the game is over."""
+        # Check if the top row of the grid has any filled cells
+        return any(cell == 1 for cell in self.grid[0])
+
+    def get_state(self):
+        return self.grid  # assuming this represents your game state
+
+    def step(self, action):
+        """Take an action and return the resulting state, reward, and whether the game is done."""
+        
+        # Assuming that potential actions are "LEFT", "RIGHT", "ROTATE", and "DROP"
+        if action == "LEFT":
+            self.move_left()
+        elif action == "RIGHT":
+            self.move_right()
+        elif action == "ROTATE":
+            self.rotate()
+        elif action == "DROP":
+            self.drop()
+        else:
+            raise ValueError("Invalid action provided")
+        
+        reward = self.calculate_reward()
+        next_state = self.get_state()  # or self.grid, based on your implementation
+        done = self.game_over()
+        
+        return next_state, reward, done
 
     def run(self):
         drop_counter = 0
@@ -126,36 +224,34 @@ class TetrisGame:
                     sys.exit()
                 elif event.type == pygame.KEYDOWN:
                     if event.key == pygame.K_LEFT:
-                        if not self.check_collision((self.current_position[0] - 1, self.current_position[1]), TETRIMINOS[self.current_tetrimino][0]):
+                        if not self.check_collision((self.current_position[0] - 1, self.current_position[1]), self.current_tetrimino.current_shape):
                             self.current_position = (self.current_position[0] - 1, self.current_position[1])
                     elif event.key == pygame.K_RIGHT:
-                        if not self.check_collision((self.current_position[0] + 1, self.current_position[1]), TETRIMINOS[self.current_tetrimino][0]):
+                        if not self.check_collision((self.current_position[0] + 1, self.current_position[1]), self.current_tetrimino.current_shape):
                             self.current_position = (self.current_position[0] + 1, self.current_position[1])
                     elif event.key == pygame.K_DOWN:
-                        if not self.check_collision((self.current_position[0], self.current_position[1] + 1), TETRIMINOS[self.current_tetrimino][0]):
+                        if not self.check_collision((self.current_position[0], self.current_position[1] + 1), self.current_tetrimino.current_shape):
                             self.current_position = (self.current_position[0], self.current_position[1] + 1)
 
                     elif event.key == pygame.K_UP:
-                        rotated_shape = self.current_tetrimino.rotate()
-                        if not self.check_collision(self.current_position, rotated_shape):
-                            self.current_tetrimino.shape = rotated_shape
+                        self.rotate()
                     elif event.key == pygame.K_ESCAPE:
                         # Exit the game when the Escape key is pressed
                         pygame.quit()
                         sys.exit()
 
             if current_time - last_drop_time > drop_speed:
-                if not self.check_collision((self.current_position[0], self.current_position[1] + 1), TETRIMINOS[self.current_tetrimino][0]):
+                if not self.check_collision((self.current_position[0], self.current_position[1] + 1), self.current_tetrimino.current_shape):
                     self.current_position = (self.current_position[0], self.current_position[1] + 1)
                 else:
                     self.place_tetrimino()
                 last_drop_time = current_time
 
-            for event in pygame.event.get():
-                pass
             self.screen.fill(WHITE)
             self.draw_grid()
-            self.draw_tetrimino(self.current_position, TETRIMINOS[self.current_tetrimino][0])
+            self.draw_tetrimino(self.current_position, self.current_tetrimino.current_shape)
+            self.draw_preview_box()
+            self.draw_next_tetrimino()
 
             pygame.display.flip()
             self.clock.tick(FPS)
