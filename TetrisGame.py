@@ -1,5 +1,6 @@
 import pygame
 import random
+import sys
 
 # Initialize pygame
 pygame.init()
@@ -118,6 +119,31 @@ class TetrisGame:
         running = True
         while running:
             current_time = pygame.time.get_ticks()
+            for event in pygame.event.get():
+                if event.type == pygame.QUIT:
+                    running = False
+                    pygame.quit()
+                    sys.exit()
+                elif event.type == pygame.KEYDOWN:
+                    if event.key == pygame.K_LEFT:
+                        if not self.check_collision((self.current_position[0] - 1, self.current_position[1]), TETRIMINOS[self.current_tetrimino][0]):
+                            self.current_position = (self.current_position[0] - 1, self.current_position[1])
+                    elif event.key == pygame.K_RIGHT:
+                        if not self.check_collision((self.current_position[0] + 1, self.current_position[1]), TETRIMINOS[self.current_tetrimino][0]):
+                            self.current_position = (self.current_position[0] + 1, self.current_position[1])
+                    elif event.key == pygame.K_DOWN:
+                        if not self.check_collision((self.current_position[0], self.current_position[1] + 1), TETRIMINOS[self.current_tetrimino][0]):
+                            self.current_position = (self.current_position[0], self.current_position[1] + 1)
+
+                    elif event.key == pygame.K_UP:
+                        rotated_shape = self.current_tetrimino.rotate()
+                        if not self.check_collision(self.current_position, rotated_shape):
+                            self.current_tetrimino.shape = rotated_shape
+                    elif event.key == pygame.K_ESCAPE:
+                        # Exit the game when the Escape key is pressed
+                        pygame.quit()
+                        sys.exit()
+
             if current_time - last_drop_time > drop_speed:
                 if not self.check_collision((self.current_position[0], self.current_position[1] + 1), TETRIMINOS[self.current_tetrimino][0]):
                     self.current_position = (self.current_position[0], self.current_position[1] + 1)
