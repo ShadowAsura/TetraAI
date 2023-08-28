@@ -1,7 +1,10 @@
 import pygame
 import random
 import sys
+
 from Tetrimino import Tetrimino
+from tetris_ai import best_move, simulate_move
+
 
 # Initialize pygame
 pygame.init()
@@ -13,6 +16,9 @@ BLOCK_SIZE = 30
 SCREEN_SIZE = (GRID_SIZE[0] * BLOCK_SIZE + 150, GRID_SIZE[1] * BLOCK_SIZE)  # +150 pixels for the preview box
 
 FPS = 60
+
+
+
 
 # Tetriminos shapes and rotations
 TETRIMINOS = {
@@ -95,13 +101,6 @@ class TetrisGame:
         pygame.draw.rect(self.screen, (0, 0, 0), (GRID_SIZE[0] * BLOCK_SIZE, 0, 150, 5 * BLOCK_SIZE), 2)  # Draws a rectangle with a 2 pixel border width
         pygame.draw.rect(self.screen, (220, 220, 220), (GRID_SIZE[0] * BLOCK_SIZE + 2, 2, 146, 5 * BLOCK_SIZE - 4))  # Fills the inside of the rectangle
 
-    def draw_next_tetrimino(self):
-        tetrimino_shape = TETRIMINOS[self.next_tetrimino][0]  # Get the first rotation of the next tetrimino
-        offset_x = GRID_SIZE[0] * BLOCK_SIZE + 75  # Center of the preview box
-        offset_y = BLOCK_SIZE * 2  # Vertical position in the preview box
-        for x, y in tetrimino_shape:
-            pygame.draw.rect(self.screen, (0, 128, 255), ((x * BLOCK_SIZE) + offset_x, (y * BLOCK_SIZE) + offset_y, BLOCK_SIZE, BLOCK_SIZE))
-
 
     def spawn_tetrimino(self):
         self.current_tetrimino = Tetrimino(TETRIMINOS[self.next_tetrimino])
@@ -133,12 +132,38 @@ class TetrisGame:
             for x, cell in enumerate(row):
                 if cell:
                     pygame.draw.rect(self.screen, (0, 128, 255), (x * BLOCK_SIZE, y * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE))
+        """start_point = (GRID_SIZE[0] * 10, 128)
+        end_point = (GRID_SIZE[0], GRID_SIZE[1])
+        pygame.draw.line(self.screen, (0,0,0), start_point, end_point, 2)  # Using white color for the line"""
 
     def draw_tetrimino(self, position, tetrimino):
         if not isinstance(tetrimino, list):
             return
         for x, y in tetrimino:
-            pygame.draw.rect(self.screen, (0, 128, 255), ((x + position[0]) * BLOCK_SIZE, (y + position[1]) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE))
+            pygame.draw.rect(self.screen, self.current_tetrimino.color, ((x + position[0]) * BLOCK_SIZE, (y + position[1]) * BLOCK_SIZE, BLOCK_SIZE, BLOCK_SIZE))
+
+    def draw_next_tetrimino(self):
+        tetrimino_shape = TETRIMINOS[self.next_tetrimino][0]  # Get the first rotation of the next tetrimino
+        middle_preview_box = 2.5 * BLOCK_SIZE  # This is half of 5 * BLOCK_SIZE which is our height for preview box
+
+        
+        # Calculate the width and height of the tetrimino
+        min_x = min([x for x, y in tetrimino_shape])
+        max_x = max([x for x, y in tetrimino_shape])
+        min_y = min([y for x, y in tetrimino_shape])
+        max_y = max([y for x, y in tetrimino_shape])
+        width = (max_x - min_x + 1) * BLOCK_SIZE
+        height = (max_y - min_y + 1) * BLOCK_SIZE
+
+        middle_tetrimino = (max_y + min_y) * BLOCK_SIZE / 2
+
+        # Calculate the offsets to center the tetrimino in the preview box
+        offset_x = GRID_SIZE[0] * BLOCK_SIZE + (150 - width) // 2
+        offset_y = int(middle_preview_box - middle_tetrimino)
+
+        for x, y in tetrimino_shape:
+            pygame.draw.rect(self.screen, (0, 128, 255), ((x * BLOCK_SIZE) + offset_x, (y * BLOCK_SIZE) + offset_y, BLOCK_SIZE, BLOCK_SIZE))
+
 
 
     def place_tetrimino(self):
@@ -210,6 +235,7 @@ class TetrisGame:
         return next_state, reward, done
 
     def run(self):
+        game_state = [[0 for _ in range(10)] for _ in range(20)]  # 10x20 grid
         drop_counter = 0
         drop_speed = 500  # milliseconds
         last_drop_time = pygame.time.get_ticks()
@@ -247,6 +273,8 @@ class TetrisGame:
                     self.place_tetrimino()
                 last_drop_time = current_time
 
+            move = best_move(game_state, self.current_tetrimino)
+            game_state = simulate_move(game_state, self.current_tetrimino, move)
             self.screen.fill(WHITE)
             self.draw_grid()
             self.draw_tetrimino(self.current_position, self.current_tetrimino.current_shape)
