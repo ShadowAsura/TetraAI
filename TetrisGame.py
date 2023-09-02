@@ -3,8 +3,8 @@ import random
 import sys
 
 from Tetrimino import Tetrimino
-from tetris_ai import best_move, simulate_move
-
+from Model import QNetwork
+from replay_buffer import ReplayBuffer
 
 # Initialize pygame
 pygame.init()
@@ -17,7 +17,14 @@ SCREEN_SIZE = (GRID_SIZE[0] * BLOCK_SIZE + 150, GRID_SIZE[1] * BLOCK_SIZE)  # +1
 
 FPS = 60
 
-
+# Initialize network and hyperparameters
+input_dim = 200
+hidden_dim = 128
+output_dim = 4
+network = QNetwork(input_dim, hidden_dim, output_dim)
+replay_buffer = ReplayBuffer(10000)
+epsilon = 1.0
+num_episodes = 1000
 
 
 # Tetriminos shapes and rotations
@@ -195,16 +202,6 @@ class TetrisGame:
         if not self.check_collision(new_position, self.current_tetrimino.current_shape):
             self.current_position = new_position
 
-    def calculate_reward(self):
-        """Calculate reward based on line clears or other game metrics."""
-        # For simplicity, reward 1 point for each cleared line
-        # Note: You may want to design a more complex reward function
-        reward = 0
-        for row in self.grid:
-            if all(cell == 1 for cell in row):  # Assuming 1 represents filled cell
-                reward += 1
-        return reward
-
     def game_over(self):
         """Check if the game is over."""
         # Check if the top row of the grid has any filled cells
@@ -235,10 +232,11 @@ class TetrisGame:
         return next_state, reward, done
 
     def run(self):
-        game_state = [[0 for _ in range(10)] for _ in range(20)]  # 10x20 grid
         drop_counter = 0
         drop_speed = 500  # milliseconds
         last_drop_time = pygame.time.get_ticks()
+        
+        ai_enabled = True  # Flag to control whether AI should make a move
 
         running = True
         while running:
@@ -249,23 +247,23 @@ class TetrisGame:
                     pygame.quit()
                     sys.exit()
                 elif event.type == pygame.KEYDOWN:
-                    if event.key == pygame.K_LEFT:
-                        if not self.check_collision((self.current_position[0] - 1, self.current_position[1]), self.current_tetrimino.current_shape):
-                            self.current_position = (self.current_position[0] - 1, self.current_position[1])
-                    elif event.key == pygame.K_RIGHT:
-                        if not self.check_collision((self.current_position[0] + 1, self.current_position[1]), self.current_tetrimino.current_shape):
-                            self.current_position = (self.current_position[0] + 1, self.current_position[1])
-                    elif event.key == pygame.K_DOWN:
-                        if not self.check_collision((self.current_position[0], self.current_position[1] + 1), self.current_tetrimino.current_shape):
-                            self.current_position = (self.current_position[0], self.current_position[1] + 1)
-
-                    elif event.key == pygame.K_UP:
+                    #ai_enabled = False  # Disable AI if user presses a key
+                    pass
+                    # ... (code for handling keyboard input)
+            
+            if ai_enabled:
+                move = best_move(self.grid, self.current_tetrimino)
+                if move['rotate']:
+                    for _ in range(move['rotate']):
                         self.rotate()
-                    elif event.key == pygame.K_ESCAPE:
-                        # Exit the game when the Escape key is pressed
-                        pygame.quit()
-                        sys.exit()
+                if move['dx'] < 0:
+                    self.move_left()
+                elif move['dx'] > 0:
+                    self.move_right()
 
+                # Drop after the moves and rotations
+                self.drop()
+            
             if current_time - last_drop_time > drop_speed:
                 if not self.check_collision((self.current_position[0], self.current_position[1] + 1), self.current_tetrimino.current_shape):
                     self.current_position = (self.current_position[0], self.current_position[1] + 1)
@@ -273,8 +271,6 @@ class TetrisGame:
                     self.place_tetrimino()
                 last_drop_time = current_time
 
-            move = best_move(game_state, self.current_tetrimino)
-            game_state = simulate_move(game_state, self.current_tetrimino, move)
             self.screen.fill(WHITE)
             self.draw_grid()
             self.draw_tetrimino(self.current_position, self.current_tetrimino.current_shape)
@@ -286,6 +282,40 @@ class TetrisGame:
 
 
 
-if __name__ == "__main__":
-    game = TetrisGame()
-    game.run()
+
+env = TetrisGame()
+for episode in range(num_episodes):
+    state = env.reset()  # Reset the environment and get initial state
+    done = False
+    episode_reward = 0  # To keep track of total reward in each episode
+
+    while not done:
+        # Select action using epsilon-greedy policy
+        q_values = forward_pass(state, W1, W2)
+        action = epsilon_greedy(q_values, epsilon)
+
+        # Execute action and observe reward, next_state
+        next_state, reward, done, _ = env.step(action)  # This line is environment-specific
+
+        # Store experience in replay buffer
+        replay_buffer.push(state, action, reward, next_state, done)
+
+        # Update the state
+        state = next_state
+        episode_reward += reward
+
+        # Train the model if replay buffer has enough experiences
+        if len(replay_buffer) >= batch_size:
+            batch_state, batch_action, batch_reward, batch_next_state, batch_done = replay_buffer.sample(batch_size)
+            
+            # Perform one training step
+            loss = train(W1, W2, W1_target, W2_target, batch_state, batch_action, batch_reward, batch_next_state)
+
+        # Periodically update the Target Network
+        if episode % 10 == 0:
+            update_target_network(W1, W2, W1_target, W2_target)
+
+    # Decay epsilon
+    epsilon = max(min_epsilon, epsilon * epsilon_decay)
+
+    print(f"Episode {episode+1}, Total Reward: {episode_reward}")
