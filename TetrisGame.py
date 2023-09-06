@@ -2,6 +2,8 @@ import pygame
 import random
 import sys
 import numpy as np
+import matplotlib.pyplot as plt
+
 from Tetrimino import Tetrimino
 from q_network import QNetwork
 from replay_buffer import ReplayBuffer
@@ -86,8 +88,10 @@ class TetrisGame:
 
 
     def reset(self):
-        self.grid = [[0 for _ in range(GRID_SIZE[0])] for _ in range(GRID_SIZE[1])]
+        self.grid = np.zeros((GRID_SIZE[1], GRID_SIZE[0]), dtype=int)  # Use NumPy zeros
         self.spawn_tetrimino()
+        return self.grid
+
 
 
     def move(self, direction):
@@ -125,9 +129,10 @@ class TetrisGame:
 
 
     def drop(self):
-        while not self.check_collision((self.current_position[0], self.current_position[1] + 1), TETRIMINOS[self.current_tetrimino][0]):
+        while not self.check_collision((self.current_position[0], self.current_position[1] + 1), self.current_tetrimino.current_shape):
             self.current_position = (self.current_position[0], self.current_position[1] + 1)
         self.place_tetrimino()
+
 
 
     def check_collision(self, position, tetrimino):
@@ -180,7 +185,12 @@ class TetrisGame:
 
     def place_tetrimino(self):
         for x, y in self.current_tetrimino.current_shape:
-            self.grid[y + self.current_position[1]][x + self.current_position[0]] = 1
+            if 0 <= x + self.current_position[0] < GRID_SIZE[0] and 0 <= y + self.current_position[1] < GRID_SIZE[1]:
+                self.grid[y + self.current_position[1]][x + self.current_position[0]] = 1
+            else:
+                # Handle the out-of-bounds case
+                print(f"Attempted to access out-of-bounds grid index: x = {x + self.current_position[0]}, y = {y + self.current_position[1]}")
+
         self.clear_lines()
         self.spawn_tetrimino()
 
@@ -306,23 +316,33 @@ class TetrisGame:
         if lines_cleared > 0:
             reward += lines_cleared * 10
 
-        # Check for potential collisions for a downward move (bad scenario)
-        if self.check_collision((self.current_position[0], self.current_position[1] + 1), self.current_tetrimino.current_shape):
-            reward -= 5
+        # Hole penalty
+        holes = sum(1 for x in range(GRID_SIZE[0]) for y in range(GRID_SIZE[1]-1) if self.grid[y][x] == 0 and self.grid[y+1][x] == 1)
+        reward -= holes * 5
+        
+        # Height penalty (height of the tallest stack)
+        max_height = max(sum(1 for y in range(GRID_SIZE[1]) if self.grid[y][x] == 1) for x in range(GRID_SIZE[0]))
+        reward -= max_height
 
-        # If the game is over, then heavily penalize the action
+        # Column balance (variance in height between columns)
+        heights = [sum(1 for y in range(GRID_SIZE[1]) if self.grid[y][x] == 1) for x in range(GRID_SIZE[0])]
+        variance = np.var(heights)
+        reward -= variance * 2
+
+        # Game over penalty
         if self.game_over():
             reward -= 100
-        
+
         return reward
 
 
+#calculate_reward ends here
 
 
 # Initialize Tetris game and Q-network
 tetris = TetrisGame()
 
-
+"""
 # Main loop
 for episode in range(1, EPISODES + 1):
     state = tetris.reset()
@@ -330,23 +350,25 @@ for episode in range(1, EPISODES + 1):
     episode_reward = 0
 
     while not done:
+        print(f"Current State: {state}")
         # Choose an action with epsilon-greedy strategy
         if np.random.rand() < EPSILON:
             action = random.randint(0, 3)  # Assuming 4 possible actions
         else:
             action = np.argmax(q_network.predict(state))
 
-        # Take a step
-        print(f"Action type: {type(action)}, Action value: {action}")
-
+        print(f"Chosen Action: {action}")
         next_state, reward, done = tetris.step(action)
-
+        print(f"Next State: {next_state}, Reward: {reward}, Done: {done}")
+        if next_state is None:
+            print("Next state is None. Breaking the loop.")
+            break
         # Update Q-values
         next_state_array = np.array(next_state)
         q_values_next, _ = q_network.forward_pass(next_state_array)
         target = reward + GAMMA * np.max(q_values_next)
 
-
+        print(f"Q-Values Next: {q_values_next}")
         q_network.update(state, action, target)
 
         # Update state and episode reward
@@ -358,6 +380,75 @@ for episode in range(1, EPISODES + 1):
         EPSILON *= EPSILON_DECAY
 
     print(f"Episode: {episode}, Total Reward: {episode_reward}")
-
+"""
 # Save the trained model
-q_network.save_model("tetris_qnetwork.h5")
+#q_network.save_model("tetris_qnetwork.h5")
+if __name__ == "__main__":
+    tetris = TetrisGame()  # Create an instance of your Tetris game class
+    episode_rewards = []
+    episode_numbers = []
+    try:
+        for episode in range(1, EPISODES + 1):
+            state = tetris.reset()
+            done = False
+            episode_reward = 0
+            while not done:
+                # Your game loop logic (you can include the pygame event loop here)
+                for event in pygame.event.get():
+                    if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
+                        done = True
+                
+                # Choose an action with epsilon-greedy strategy
+                if np.random.rand() < EPSILON:
+                    action = random.randint(0, 3)
+                else:
+                    q_values, _ = q_network.forward_pass(np.array(state).flatten())
+                    action = int(np.argmax(q_values))
+
+
+
+                # Take the step
+                next_state, reward, done = tetris.step(action)
+                
+                # Update the Q-values
+                if next_state is not None:
+                    next_state_array = np.array(next_state)
+                    q_values_next, _ = q_network.forward_pass(next_state_array)
+                    target = reward + GAMMA * np.max(q_values_next)
+                    q_network.update(state, action, target)
+                    
+                # Update the game display
+                tetris.screen.fill(WHITE)
+                tetris.draw_grid()
+                tetris.draw_tetrimino(tetris.current_position, tetris.current_tetrimino.current_shape)
+                tetris.draw_next_tetrimino()
+                tetris.draw_preview_box()
+                pygame.display.update()
+                
+                # Update state and episode reward
+                state = next_state
+                episode_reward += reward
+
+            # At the end of each episode, print and store the episode's total reward
+                print(f"Episode: {episode}, Total Reward: {episode_reward}")
+                episode_rewards.append(episode_reward)
+                episode_numbers.append(episode)
+
+            # Decay epsilon
+            if EPSILON > EPSILON_MIN:
+                EPSILON *= EPSILON_DECAY
+
+            print(f"Episode: {episode}, Total Reward: {episode_reward}")
+
+    except KeyboardInterrupt:
+        print("Manually terminated")
+
+    finally:
+        # Display your Matplotlib plot here
+        plt.plot(episode_numbers, episode_rewards)
+        plt.xlabel('Episode')
+        plt.ylabel('Total Reward')
+        plt.title('Performance over Episodes')
+        plt.show()
+
+

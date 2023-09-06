@@ -16,10 +16,16 @@ class QNetwork:
         self.W2_target = np.copy(self.W2)
 
     def forward_pass(self, state):
-        z1 = state.dot(self.W1)
-        a1 = np.maximum(z1, 0)
-        q_values = a1.dot(self.W2)
-        return q_values, a1
+        if state is None:
+            print("State is None!")
+            return None, None
+        state_array = np.array(state)  # Convert the list to a NumPy array
+        state_flattened = state_array.flatten()  # Now you can call .flatten()
+        z1 = state_flattened.dot(self.W1)
+        a1 = np.tanh(z1)
+        z2 = a1.dot(self.W2)
+        return z2, a1
+
 
     def train(self, state, action, reward, next_state):
         q_values, a1 = self.forward_pass(state)
@@ -38,6 +44,32 @@ class QNetwork:
         self.W2 += self.alpha * dW2
         
         return loss
+
+    def update(self, state, action, target, learning_rate=0.01):
+        state = np.array(state).flatten()
+
+        # Forward pass
+        q_values, hidden_layer_output = self.forward_pass(state)
+        
+        # Compute the loss (Mean Squared Error)
+        loss = (q_values[action] - target) ** 2
+        
+        # Compute the gradient (Backpropagation)
+        delta_q = 2 * (q_values[action] - target)
+        
+        # Gradients for W2
+        gradient_W2 = hidden_layer_output * delta_q
+        
+        # Gradients for W1
+        delta_hidden = (1 - hidden_layer_output ** 2) * (self.W2[:, action] * delta_q)
+
+        gradient_W1 = state[:, np.newaxis] * delta_hidden
+
+        
+        # Update weights
+        self.W1 -= learning_rate * gradient_W1
+        self.W2[:, action] -= learning_rate * gradient_W2
+
 
     def update_target_network(self):
         self.W1_target = np.copy(self.W1)
