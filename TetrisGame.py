@@ -1,9 +1,9 @@
 import pygame
 import random
 import sys
-
+import numpy as np
 from Tetrimino import Tetrimino
-from Model import QNetwork
+from q_network import QNetwork
 from replay_buffer import ReplayBuffer
 
 # Initialize pygame
@@ -21,10 +21,15 @@ FPS = 60
 input_dim = 200
 hidden_dim = 128
 output_dim = 4
-network = QNetwork(input_dim, hidden_dim, output_dim)
+q_network = QNetwork(input_dim, hidden_dim, output_dim)
 replay_buffer = ReplayBuffer(10000)
-epsilon = 1.0
-num_episodes = 1000
+
+GAMMA = 0.99
+EPSILON = 1.0
+EPSILON_MIN = 0.01
+EPSILON_DECAY = 0.995
+LEARNING_RATE = 0.001
+EPISODES = 1000
 
 
 # Tetriminos shapes and rotations
@@ -73,7 +78,7 @@ class TetrisGame:
         # Initialize with a Tetrimino instance
         self.next_tetrimino = random.choice(list(TETRIMINOS.keys()))
         self.spawn_tetrimino()  # This will set self.current_tetrimino
-        
+        self.current_position = (GRID_SIZE[0] // 2, 0)  # Initialize the current_position
         self.screen = pygame.display.set_mode(SCREEN_SIZE)
         self.clock = pygame.time.Clock()
 
@@ -213,7 +218,24 @@ class TetrisGame:
     def step(self, action):
         """Take an action and return the resulting state, reward, and whether the game is done."""
         
-        # Assuming that potential actions are "LEFT", "RIGHT", "ROTATE", and "DROP"
+        # Map integer actions to string actions if necessary
+        if isinstance(action, int):
+            action_map = {
+                0: "LEFT",
+                1: "RIGHT",
+                2: "ROTATE",
+                3: "DROP"
+            }
+            action = action_map.get(action, "INVALID")
+        
+        print(f"Action type: {type(action)}, Action value: {action}")
+        print("Received action:", action)
+
+        # Check if the action is a string
+        if not isinstance(action, str):
+            print(f"Invalid action type: {type(action)}")
+            raise ValueError("Invalid action type provided")
+        
         if action == "LEFT":
             self.move_left()
         elif action == "RIGHT":
@@ -225,21 +247,24 @@ class TetrisGame:
         else:
             raise ValueError("Invalid action provided")
         
-        reward = self.calculate_reward()
-        next_state = self.get_state()  # or self.grid, based on your implementation
+        reward = self.calculate_reward()  # Here we call the reward function
+        next_state = self.get_state()
         done = self.game_over()
         
         return next_state, reward, done
 
+
     def run(self):
+        global epsilon
         drop_counter = 0
-        drop_speed = 500  # milliseconds
+        drop_speed = 500
         last_drop_time = pygame.time.get_ticks()
         
-        ai_enabled = True  # Flag to control whether AI should make a move
+        ai_enabled = True
 
         running = True
         while running:
+            self.clock.tick(FPS)  # Regulate speed
             current_time = pygame.time.get_ticks()
             for event in pygame.event.get():
                 if event.type == pygame.QUIT:
@@ -247,75 +272,92 @@ class TetrisGame:
                     pygame.quit()
                     sys.exit()
                 elif event.type == pygame.KEYDOWN:
-                    #ai_enabled = False  # Disable AI if user presses a key
-                    pass
-                    # ... (code for handling keyboard input)
-            
-            if ai_enabled:
-                move = best_move(self.grid, self.current_tetrimino)
-                if move['rotate']:
-                    for _ in range(move['rotate']):
+                    if event.key == pygame.K_LEFT:
+                        self.move_left()
+                    elif event.key == pygame.K_RIGHT:
+                        self.move_right()
+                    elif event.key == pygame.K_UP:
                         self.rotate()
-                if move['dx'] < 0:
-                    self.move_left()
-                elif move['dx'] > 0:
-                    self.move_right()
+                    elif event.key == pygame.K_DOWN:
+                        self.drop()
 
-                # Drop after the moves and rotations
-                self.drop()
-            
-            if current_time - last_drop_time > drop_speed:
-                if not self.check_collision((self.current_position[0], self.current_position[1] + 1), self.current_tetrimino.current_shape):
-                    self.current_position = (self.current_position[0], self.current_position[1] + 1)
+            if ai_enabled:
+                if random.random() < epsilon:  # epsilon-greedy policy
+                    move = random.choice(["LEFT", "RIGHT", "ROTATE", "DROP"])
                 else:
-                    self.place_tetrimino()
-                last_drop_time = current_time
+                    move = best_move(self.get_state(), self.current_tetrimino)
+                print("AI generated move:", move)
+                next_state, reward, done = self.step(move)
 
             self.screen.fill(WHITE)
             self.draw_grid()
             self.draw_tetrimino(self.current_position, self.current_tetrimino.current_shape)
-            self.draw_preview_box()
             self.draw_next_tetrimino()
+            self.draw_preview_box()
+            pygame.display.update()
+    def calculate_reward(self):
+        """
+        Calculate reward based on game state.
+        """
+        reward = 0
 
-            pygame.display.flip()
-            self.clock.tick(FPS)
+        # Check for cleared lines and add reward accordingly
+        lines_cleared = len([y for y in range(GRID_SIZE[1]) if all(self.grid[y])])
+        if lines_cleared > 0:
+            reward += lines_cleared * 10
+
+        # Check for potential collisions for a downward move (bad scenario)
+        if self.check_collision((self.current_position[0], self.current_position[1] + 1), self.current_tetrimino.current_shape):
+            reward -= 5
+
+        # If the game is over, then heavily penalize the action
+        if self.game_over():
+            reward -= 100
+        
+        return reward
 
 
 
 
-env = TetrisGame()
-for episode in range(num_episodes):
-    state = env.reset()  # Reset the environment and get initial state
+# Initialize Tetris game and Q-network
+tetris = TetrisGame()
+
+
+# Main loop
+for episode in range(1, EPISODES + 1):
+    state = tetris.reset()
     done = False
-    episode_reward = 0  # To keep track of total reward in each episode
+    episode_reward = 0
 
     while not done:
-        # Select action using epsilon-greedy policy
-        q_values = forward_pass(state, W1, W2)
-        action = epsilon_greedy(q_values, epsilon)
+        # Choose an action with epsilon-greedy strategy
+        if np.random.rand() < EPSILON:
+            action = random.randint(0, 3)  # Assuming 4 possible actions
+        else:
+            action = np.argmax(q_network.predict(state))
 
-        # Execute action and observe reward, next_state
-        next_state, reward, done, _ = env.step(action)  # This line is environment-specific
+        # Take a step
+        print(f"Action type: {type(action)}, Action value: {action}")
 
-        # Store experience in replay buffer
-        replay_buffer.push(state, action, reward, next_state, done)
+        next_state, reward, done = tetris.step(action)
 
-        # Update the state
+        # Update Q-values
+        next_state_array = np.array(next_state)
+        q_values_next, _ = q_network.forward_pass(next_state_array)
+        target = reward + GAMMA * np.max(q_values_next)
+
+
+        q_network.update(state, action, target)
+
+        # Update state and episode reward
         state = next_state
         episode_reward += reward
 
-        # Train the model if replay buffer has enough experiences
-        if len(replay_buffer) >= batch_size:
-            batch_state, batch_action, batch_reward, batch_next_state, batch_done = replay_buffer.sample(batch_size)
-            
-            # Perform one training step
-            loss = train(W1, W2, W1_target, W2_target, batch_state, batch_action, batch_reward, batch_next_state)
-
-        # Periodically update the Target Network
-        if episode % 10 == 0:
-            update_target_network(W1, W2, W1_target, W2_target)
-
     # Decay epsilon
-    epsilon = max(min_epsilon, epsilon * epsilon_decay)
+    if EPSILON > EPSILON_MIN:
+        EPSILON *= EPSILON_DECAY
 
-    print(f"Episode {episode+1}, Total Reward: {episode_reward}")
+    print(f"Episode: {episode}, Total Reward: {episode_reward}")
+
+# Save the trained model
+q_network.save_model("tetris_qnetwork.h5")
