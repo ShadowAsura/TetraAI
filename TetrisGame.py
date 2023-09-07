@@ -334,7 +334,8 @@ class TetrisGame:
             reward -= 100
 
         return reward
-
+def moving_average(data, window_size):
+    return [np.mean(data[i:i+window_size]) for i in range(0, len(data) - window_size)]
 
 #calculate_reward ends here
 
@@ -381,12 +382,21 @@ for episode in range(1, EPISODES + 1):
 
     print(f"Episode: {episode}, Total Reward: {episode_reward}")
 """
-# Save the trained model
-#q_network.save_model("tetris_qnetwork.h5")
+# To load the model
+"""
+W1 = np.load("W1.npy")
+W2 = np.load("W2.npy")
+q_network.W1 = W1
+q_network.W2 = W2
+"""
 if __name__ == "__main__":
-    tetris = TetrisGame()  # Create an instance of your Tetris game class
+    plt.ion()  # Turn on interactive mode for matplotlib
+    fig, ax = plt.subplots()
+    
+    tetris = TetrisGame()
     episode_rewards = []
     episode_numbers = []
+
     try:
         for episode in range(1, EPISODES + 1):
             state = tetris.reset()
@@ -437,18 +447,28 @@ if __name__ == "__main__":
             # Decay epsilon
             if EPSILON > EPSILON_MIN:
                 EPSILON *= EPSILON_DECAY
-
+            episode_rewards.append(episode_reward)
+            episode_numbers.append(episode)
             print(f"Episode: {episode}, Total Reward: {episode_reward}")
+
+
+            ax.clear()
+            ax.plot(episode_rewards, label='Original rewards')
+            ax.legend()
+            plt.draw()  # Update the plot
+            plt.pause(0.0001)  # Pause to update the window
+
+
 
     except KeyboardInterrupt:
         print("Manually terminated")
 
     finally:
-        # Display your Matplotlib plot here
-        plt.plot(episode_numbers, episode_rewards)
-        plt.xlabel('Episode')
-        plt.ylabel('Total Reward')
-        plt.title('Performance over Episodes')
+        # To save the model
+        np.save("W1.npy", q_network.W1)
+        np.save("W2.npy", q_network.W2)
+
+        plt.ioff()  # Turn off interactive mode
         plt.show()
 
 
