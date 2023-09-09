@@ -32,7 +32,7 @@ EPSILON = 1.0
 EPSILON_MIN = 0.01
 EPSILON_DECAY = 0.995
 LEARNING_RATE = 0.001
-EPISODES = 1000
+EPISODES = 500
 
 
 # Tetriminos shapes and rotations
@@ -192,10 +192,11 @@ class TetrisGame:
         self.spawn_tetrimino()
 
     def clear_lines(self):
-        lines_to_clear = [y for y in range(GRID_SIZE[1]) if all(self.grid[y])]
-        for y in lines_to_clear:
-            del self.grid[y]
-            self.grid.insert(0, [0 for _ in range(GRID_SIZE[0])])
+        full_lines = [y for y in range(len(self.grid)) if all(self.grid[y])]
+        
+        for y in full_lines:
+            self.grid = np.vstack([np.zeros_like(self.grid[0]), self.grid[:-1]])
+
 
 
     def move_left(self):
