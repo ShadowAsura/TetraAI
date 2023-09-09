@@ -10,8 +10,10 @@ class QNetwork:
         self.alpha = alpha
         self.gamma = gamma
 
-        self.W1 = np.random.randn(input_dim, hidden_dim) * np.sqrt(2. / input_dim)
-        self.W2 = np.random.randn(hidden_dim, output_dim) * np.sqrt(2. / hidden_dim)
+        self.W1 = np.random.randn(input_dim, hidden_dim) / np.sqrt(input_dim / 2.)
+        self.W2 = np.random.randn(hidden_dim, output_dim) / np.sqrt(hidden_dim / 2.)
+
+
         self.W1_target = np.copy(self.W1)
         self.W2_target = np.copy(self.W2)
 
@@ -38,7 +40,9 @@ class QNetwork:
         
         delta = target - q_values
         dW2 = a1.T.dot(delta)
-        dW1 = state.T.dot((delta.dot(self.W2.T) * (a1 > 0)))  # Gradient through ReLU
+        dW1 = state.T.dot((delta.dot(self.W2.T) * (1 - a1**2)))
+
+
     
         self.W1 += self.alpha * dW1
         self.W2 += self.alpha * dW2
@@ -62,13 +66,16 @@ class QNetwork:
         
         # Gradients for W1
         delta_hidden = (1 - hidden_layer_output ** 2) * (self.W2[:, action] * delta_q)
-
         gradient_W1 = state[:, np.newaxis] * delta_hidden
 
+        # Clip the gradients to prevent them from becoming too large
+        gradient_W1 = np.clip(gradient_W1, -1, 1)
+        gradient_W2 = np.clip(gradient_W2, -1, 1)
         
         # Update weights
         self.W1 -= learning_rate * gradient_W1
         self.W2[:, action] -= learning_rate * gradient_W2
+
 
 
     def update_target_network(self):

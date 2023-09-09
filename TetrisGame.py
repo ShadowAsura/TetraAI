@@ -3,6 +3,7 @@ import random
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+import time
 
 from Tetrimino import Tetrimino
 from q_network import QNetwork
@@ -123,9 +124,6 @@ class TetrisGame:
 
         self.next_tetrimino = random.choice(list(TETRIMINOS.keys()))
         self.current_position = (GRID_SIZE[0] // 2, 0)
-        if self.check_collision(self.current_position, self.current_tetrimino.current_shape):
-            # Game over if collision at spawn
-            self.reset()
 
 
     def drop(self):
@@ -220,7 +218,6 @@ class TetrisGame:
         """Check if the game is over."""
         # Check if the top row of the grid has any filled cells
         if any(cell == 1 for cell in self.grid[0]):
-            print("Top row filled - game over!")
             return True
         return False
 
@@ -231,6 +228,7 @@ class TetrisGame:
         """Take an action and return the resulting state, reward, and whether the game is done."""
         
         # Map integer actions to string actions if necessary
+
         if isinstance(action, int):
             action_map = {
                 0: "LEFT",
@@ -260,10 +258,13 @@ class TetrisGame:
         # Debugging Step 3: Immediate check after action
         if self.game_over():
             print("Game Over Detected!")
+            done = True
+        else:
+            done = self.game_over()
 
         reward = self.calculate_reward()  # Here we call the reward function
         next_state = self.get_state()
-        done = self.game_over()
+
 
         return next_state, reward, done
 
@@ -397,6 +398,13 @@ if __name__ == "__main__":
     tetris = TetrisGame()  # Create an instance of your Tetris game class
     episode_rewards = []
     episode_numbers = []
+    
+    # Randomizing Weights
+    # q_network.W1 = np.random.randn(q_network.input_dim, q_network.hidden_dim) * np.sqrt(2. / q_network.input_dim)
+    # q_network.W2 = np.random.randn(q_network.hidden_dim, q_network.output_dim) * np.sqrt(2. / q_network.hidden_dim)
+
+
+
 
     try:
         for episode in range(1, EPISODES + 1):
@@ -407,12 +415,11 @@ if __name__ == "__main__":
             print("Starting new episode")  # Debugging print
             
             while not done:  # Using done flag as the loop condition
-
+                #time.sleep(0.1)
                 for event in pygame.event.get():
                     if event.type == pygame.QUIT or (event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE):
-                        done = False
-                if tetris.game_over():
-                    done = False
+                        done = True
+                        break
 
                 if np.random.rand() < EPSILON:
                     action = random.randint(0, 3)
@@ -422,9 +429,6 @@ if __name__ == "__main__":
                 
                 next_state, reward, done = tetris.step(action)
 
-                # Debugging print for game over
-                if done:
-                    print("Game over detected by done flag")
 
                 reward = np.clip(reward, -100, 100)
 
@@ -443,7 +447,6 @@ if __name__ == "__main__":
                 
                 state = next_state
                 episode_reward += reward
-
             episode_rewards.append(episode_reward)
             episode_numbers.append(episode)
 
@@ -451,6 +454,7 @@ if __name__ == "__main__":
                 EPSILON *= EPSILON_DECAY
 
             print(f"Episode: {episode}, Total Reward: {episode_reward}")
+
 
     except KeyboardInterrupt:
         print("Manually terminated")
