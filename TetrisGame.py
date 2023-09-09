@@ -81,9 +81,16 @@ class TetrisGame:
         # Initialize with a Tetrimino instance
         self.next_tetrimino = random.choice(list(TETRIMINOS.keys()))
         self.spawn_tetrimino()  # This will set self.current_tetrimino
-        self.current_position = (GRID_SIZE[0] // 2, 0)  # Initialize the current_position
         self.screen = pygame.display.set_mode(SCREEN_SIZE)
         self.clock = pygame.time.Clock()
+        self.moved_horizontally = False
+        self.rotated = False
+        self.last_column = None
+        self.rotations_count = 0
+
+        # Initialize current tetrimino column
+        self.current_tetrimino_column = self.current_position[0]
+
 
 
 
@@ -113,17 +120,18 @@ class TetrisGame:
             # If it does result in a collision, revert the rotation to its previous state
             self.current_tetrimino.rotation -= 1
             self.current_tetrimino.rotation %= len(self.current_tetrimino.shape)
+        self.rotations_count += 1
 
     def draw_preview_box(self):
         pygame.draw.rect(self.screen, (0, 0, 0), (GRID_SIZE[0] * BLOCK_SIZE, 0, 150, 5 * BLOCK_SIZE), 2)  # Draws a rectangle with a 2 pixel border width
         pygame.draw.rect(self.screen, (220, 220, 220), (GRID_SIZE[0] * BLOCK_SIZE + 2, 2, 146, 5 * BLOCK_SIZE - 4))  # Fills the inside of the rectangle
 
-
     def spawn_tetrimino(self):
         self.current_tetrimino = Tetrimino(TETRIMINOS[self.next_tetrimino])
-
         self.next_tetrimino = random.choice(list(TETRIMINOS.keys()))
         self.current_position = (GRID_SIZE[0] // 2, 0)
+        self.current_tetrimino_column = self.current_position[0]
+
 
 
     def drop(self):
@@ -181,6 +189,7 @@ class TetrisGame:
 
 
     def place_tetrimino(self):
+        self.last_column = self.current_position[0]
         for x, y in self.current_tetrimino.current_shape:
             if 0 <= x + self.current_position[0] < GRID_SIZE[0] and 0 <= y + self.current_position[1] < GRID_SIZE[1]:
                 self.grid[y + self.current_position[1]][x + self.current_position[0]] = 1
@@ -188,6 +197,7 @@ class TetrisGame:
                 # Handle the out-of-bounds case
                 print(f"Attempted to access out-of-bounds grid index: x = {x + self.current_position[0]}, y = {y + self.current_position[1]}")
 
+        self.last_column = self.current_position[0]
         self.clear_lines()
         self.spawn_tetrimino()
 
@@ -246,10 +256,13 @@ class TetrisGame:
         
         if action == "LEFT":
             self.move_left()
+            self.moved_horizontally = True
         elif action == "RIGHT":
             self.move_right()
+            self.moved_horizontally = True
         elif action == "ROTATE":
             self.rotate()
+            self.rotated = True
         elif action == "DROP":
             self.drop()
         else:
@@ -262,6 +275,8 @@ class TetrisGame:
             done = True
         else:
             done = self.game_over()
+
+        self.last_column = self.current_tetrimino_column
 
         reward = self.calculate_reward()  # Here we call the reward function
         next_state = self.get_state()
@@ -320,26 +335,40 @@ class TetrisGame:
         # Check for cleared lines and add reward accordingly
         lines_cleared = len([y for y in range(GRID_SIZE[1]) if all(self.grid[y])])
         if lines_cleared > 0:
-            reward += lines_cleared * 10
+            reward += lines_cleared * 100  # Increased reward for line clear
 
         # Hole penalty
         holes = sum(1 for x in range(GRID_SIZE[0]) for y in range(GRID_SIZE[1]-1) if self.grid[y][x] == 0 and self.grid[y+1][x] == 1)
         reward -= holes * 5
-        
+
         # Height penalty (height of the tallest stack)
         max_height = max(sum(1 for y in range(GRID_SIZE[1]) if self.grid[y][x] == 1) for x in range(GRID_SIZE[0]))
-        reward -= max_height
+        reward -= max_height * 3  # Increase weight to discourage height
 
         # Column balance (variance in height between columns)
         heights = [sum(1 for y in range(GRID_SIZE[1]) if self.grid[y][x] == 1) for x in range(GRID_SIZE[0])]
         variance = np.var(heights)
-        reward -= variance * 2
+        reward -= variance * 3  # Increase weight to discourage variance
 
         # Game over penalty
         if self.game_over():
-            reward -= 100
+            reward -= 500  # Bigger penalty for game over
+
+        # Penalty for repeated placements in the same column
+        if self.last_column == self.current_position[0]:
+            reward -= 15
+
+        # Penalty for excessive rotations
+        if self.rotations_count > 3:
+            reward -= 10
+
+        # Reset rotations_count after calculating reward
+        self.rotations_count = 0
 
         return reward
+
+
+
 def moving_average(data, window_size):
     return [np.mean(data[i:i+window_size]) for i in range(0, len(data) - window_size)]
 
