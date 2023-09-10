@@ -3,11 +3,13 @@ import random
 import sys
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib.animation import FuncAnimation
 import time
 
 from Tetrimino import Tetrimino
 from q_network import QNetwork
 from replay_buffer import ReplayBuffer
+
 
 # Initialize pygame
 pygame.init()
@@ -32,7 +34,7 @@ EPSILON = 1.0
 EPSILON_MIN = 0.01
 EPSILON_DECAY = 0.995
 LEARNING_RATE = 0.001
-EPISODES = 500
+EPISODES = 200
 
 
 # Tetriminos shapes and rotations
@@ -226,11 +228,8 @@ class TetrisGame:
             self.current_position = new_position
 
     def game_over(self):
-        """Check if the game is over."""
-        # Check if the top row of the grid has any filled cells
-        if any(cell == 1 for cell in self.grid[0]):
-            return True
-        return False
+        return any(cell == 1 for cell in self.grid[0])
+
 
     def get_state(self):
         return self.grid  # assuming this represents your game state
@@ -424,10 +423,28 @@ W2 = np.load("W2.npy")
 q_network.W1 = W1
 q_network.W2 = W2
 
+# Setup for real-time plotting
+fig, ax = plt.subplots()
+episode_numbers, episode_rewards = [], []
+ln, = plt.plot([], [], 'r-')
+
+def init():
+    ax.set_xlim(0, 10)
+    ax.set_ylim(-100, 100)  # Adjust based on expected reward range
+    return ln,
+
+def update(frame):
+    ax.set_xlim(0, len(episode_numbers))
+    ax.set_ylim(min(episode_rewards)-10, max(episode_rewards)+10)  # Adjusting dynamically based on data
+    ln.set_data(episode_numbers, episode_rewards)
+    return ln,
+
+ani = FuncAnimation(fig, update, init_func=init, blit=True, interval=1000)
+plt.show(block=False)  # Use non-blocking mode to allow game loop to run
+
 if __name__ == "__main__":
     tetris = TetrisGame()  # Create an instance of your Tetris game class
-    episode_rewards = []
-    episode_numbers = []
+
     
     # Randomizing Weights
     # q_network.W1 = np.random.randn(q_network.input_dim, q_network.hidden_dim) * np.sqrt(2. / q_network.input_dim)
@@ -493,6 +510,9 @@ if __name__ == "__main__":
         np.save("W1.npy", q_network.W1)
         np.save("W2.npy", q_network.W2)
 
+        plt.show()
+
+        """
         window_size = 10
         smoothed_rewards = moving_average(episode_rewards, window_size)
 
@@ -500,5 +520,6 @@ if __name__ == "__main__":
         plt.plot(range(window_size, len(episode_rewards)), smoothed_rewards, label=f'Smoothed rewards (window size: {window_size})')
         plt.legend()
         plt.show()
+        """
 
 
